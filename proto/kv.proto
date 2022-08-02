@@ -2,10 +2,6 @@ syntax = "proto3";
 
 package kvproto;
 
-service Kv {
-  rpc Get(GetKeyRequest) returns (GetKeyResponse);
-  rpc Put(PutRequest) returns (PutResponse);
-}
 
 message GetKeyRequest {
   bytes key = 1;
@@ -21,4 +17,54 @@ message PutRequest {
 }
 
 message PutResponse {
+}
+
+message Empty {
+}
+
+message VoteRequest {
+  uint64 from_id = 1;
+  uint64 term = 2;
+  uint64 last_log_index = 3;
+  uint64 last_log_term = 4;
+}
+
+message VoteResponse {
+  uint64 from_id = 1;
+  uint64 term = 2;
+  bool vote_granted = 3;
+}
+
+message AppendEntriesRequest {
+  uint64 from_id = 1;
+  uint64 term = 2;
+  uint64 prev_log_index = 3;
+  uint64 prev_log_term = 4;
+  repeated LogEntry entries = 5;
+  uint64 commit_index = 6;
+}
+
+message LogEntry {
+  uint64 id = 1;
+  bytes key = 2;
+  bytes value = 3;
+  uint64 index = 4;
+  uint64 term = 5;
+}
+
+message AppendEntriesResponse {
+  uint64 from_id = 1;
+  uint64 term = 2;
+  bool success = 3;
+  uint64 last_index = 4;
+  optional uint64 mismatch_index = 5;
+}
+
+service Rpc {
+  rpc Get(GetKeyRequest) returns (GetKeyResponse);
+  rpc Put(PutRequest) returns (PutResponse);
+  rpc Vote(VoteRequest) returns (Empty);
+  rpc RespondToVote(VoteResponse) returns (Empty);
+  rpc AppendEntries(AppendEntriesRequest) returns (Empty);
+  rpc RespondToAppendEntries(AppendEntriesResponse) returns (Empty);
 }
