@@ -4,6 +4,7 @@ use derivative::Derivative;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
+use async_trait::async_trait;
 
 pub mod proto {
     tonic::include_proto!("kvproto");
