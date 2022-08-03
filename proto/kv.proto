@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package kvproto;
 
-
 message GetKeyRequest {
   bytes key = 1;
 }
