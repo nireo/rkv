@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Mutex,
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+    time::Duration,
 };
 
 use anyhow::Result;
@@ -18,7 +21,11 @@ use rocksdb::DB;
 use std::collections::HashMap;
 use tokio::sync::Notify;
 
-use crate::rpc::proto::PutResponse;
+use crate::{rpc::proto::PutResponse, error::StoreError};
+
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(500);
+const MIN_ELECTION_TIMEOUT: Duration = Duration::from_millis(750);
+const MAX_ELECTION_TIMEOUT: Duration = Duration::from_millis(950);
 
 #[derive(Debug, Clone)]
 pub struct StoreCommand {
@@ -44,7 +51,7 @@ pub trait StoreTransport {
         to_id: usize,
         key: Vec<u8>,
         value: Vec<u8>,
-    ) -> Result<PutResponse, anyhow::Error>;
+    ) -> Result<PutResponse, StoreError>;
 }
 
 #[derive(Debug)]
@@ -63,7 +70,7 @@ struct Store<T: StoreTransport + Send + Sync> {
     transport: Arc<T>,
     pending_transitions: Vec<StoreCommand>,
     command_completions: HashMap<u64, Arc<Notify>>,
-    results: HashMap<u64, Result<PutResponse, anyhow::Error>>,
+    results: HashMap<u64, Result<PutResponse, StoreError>>,
 
     #[derivative(Debug = "ignore")]
     connection: Arc<Mutex<DB>>,
@@ -177,4 +184,43 @@ pub struct StoreServer<T: StoreTransport + Send + Sync> {
     message_notifier_tx: Sender<()>,
     transition_notifier_rx: Receiver<()>,
     transition_notifier_tx: Sender<()>,
+}
+
+impl<T: StoreTransport + Send + Sync> StoreServer<T> {
+    pub fn start(this_id: usize, peers: Vec<usize>, transport: T) -> Result<Self, StoreError> {
+        let config = StoreConfig {
+            path: "./rkv".to_string(),
+        };
+        let store = Arc::new(Mutex::new(Store::new(this_id, transport, config)));
+        let noop = StoreCommand {
+            id: 0,
+            key: vec![],
+            value: vec![],
+        };
+
+        let (message_notifier_tx, message_notifier_rx) = crossbeam::channel::unbounded();
+        let (transition_notifier_tx, transition_notifier_rx) = crossbeam::channel::unbounded();
+
+        let replica = Replica::new(
+            this_id,
+            peers,
+            store.clone(),
+            store.clone(),
+            0,
+            noop,
+            HEARTBEAT_TIMEOUT,
+            (MIN_ELECTION_TIMEOUT, MAX_ELECTION_TIMEOUT),
+        );
+
+        let replica = Arc::new(Mutex::new(replica));
+        Ok(StoreServer {
+            next_cmd_in: AtomicU64::new(1),
+            store,
+            replica,
+            message_notifier_rx,
+            message_notifier_tx,
+            transition_notifier_rx,
+            transition_notifier_tx,
+        })
+    }
 }
