@@ -6,7 +6,6 @@ use std::{
     time::Duration,
 };
 
-use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use crossbeam::channel::{Receiver, Sender};
@@ -77,10 +76,10 @@ struct Store<T: StoreTransport + Send + Sync> {
 }
 
 impl<T: StoreTransport + Send + Sync> Store<T> {
-    pub fn new(this_id: usize, transport: T, config: StoreConfig) -> Result<Self> {
-        let db = DB::open_default(config.path)?;
+    pub fn new(this_id: usize, transport: T, config: StoreConfig) -> Self {
+        let db = DB::open_default(config.path).unwrap();
 
-        Ok(Store {
+        Store {
             this_id,
             leader: None,
             leader_exists: AtomicBool::new(false),
@@ -91,7 +90,7 @@ impl<T: StoreTransport + Send + Sync> Store<T> {
             command_completions: HashMap::new(),
             results: HashMap::new(),
             connection: Arc::new(Mutex::new(db)),
-        })
+        }
     }
 
     pub fn is_leader(&self) -> bool {
@@ -206,7 +205,7 @@ impl<T: StoreTransport + Send + Sync> StoreServer<T> {
             peers,
             store.clone(),
             store.clone(),
-            0,
+            0, // snapshotting is disabled
             noop,
             HEARTBEAT_TIMEOUT,
             (MIN_ELECTION_TIMEOUT, MAX_ELECTION_TIMEOUT),

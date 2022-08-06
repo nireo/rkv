@@ -5,4 +5,7 @@ use thiserror::Error;
 pub enum StoreError {
     #[error("node is not a leader")]
     NotLeader,
+
+    #[error("opening database failed")]
+    FailedDatabaseOpen
 }
