@@ -21,7 +21,7 @@ use rocksdb::DB;
 use std::collections::HashMap;
 use tokio::sync::Notify;
 
-use crate::{rpc::proto::PutResponse, error::StoreError};
+use crate::{error::StoreError, rpc::proto::PutResponse};
 
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(500);
 const MIN_ELECTION_TIMEOUT: Duration = Duration::from_millis(750);
@@ -222,5 +222,83 @@ impl<T: StoreTransport + Send + Sync> StoreServer<T> {
             transition_notifier_rx,
             transition_notifier_tx,
         })
+    }
+
+    pub fn run(&self) {
+        self.replica.lock().unwrap().start(
+            self.message_notifier_rx.clone(),
+            self.transition_notifier_rx.clone(),
+        );
+    }
+
+    pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<PutResponse, StoreError> {
+        self.wait_for_leader().await;
+
+        let (delegate, leader, transport) = {
+            let store = self.store.lock().unwrap();
+            (!store.is_leader(), store.leader, store.transport.clone())
+        };
+
+        if delegate {
+            if let Some(leader_id) = leader {
+                return transport.delegate(leader_id, key, value).await;
+            }
+            return Err(StoreError::NotLeader);
+        }
+
+        let (notify, id) = {
+            let mut store = self.store.lock().unwrap();
+            let id = self.next_cmd_in.fetch_add(1, Ordering::SeqCst);
+            let cmd = StoreCommand {
+                id: id as usize,
+                key,
+                value,
+            };
+            let notify = Arc::new(Notify::new());
+            store.command_completions.insert(id, notify.clone());
+            store.pending_transitions.push(cmd);
+            (notify, id)
+        };
+
+        self.transition_notifier_tx.send(()).unwrap();
+        notify.notified().await;
+
+        if let Some(results) = self.store.lock().unwrap().results.remove(&id) {
+            results
+        } else {
+            return Err(StoreError::NotLeader);
+        }
+    }
+
+    pub async fn wait_for_leader(&self) {
+        loop {
+            let notify = {
+                let mut store = self.store.lock().unwrap();
+                if store.leader_exists.load(Ordering::SeqCst) {
+                    break;
+                }
+                let notify = Arc::new(Notify::new());
+                store.waiters.push(notify.clone());
+                notify
+            };
+            if self
+                .store
+                .lock()
+                .unwrap()
+                .leader_exists
+                .load(Ordering::SeqCst)
+            {
+                break;
+            }
+            // TODO: add a timeout and fail if necessary
+            notify.notified().await;
+        }
+    }
+
+    /// Receive a message from the ChiselStore cluster.
+    pub fn recv_msg(&self, msg: little_raft::message::Message<StoreCommand, Bytes>) {
+        let mut cluster = self.store.lock().unwrap();
+        cluster.pending_messages.push(msg);
+        self.message_notifier_tx.send(()).unwrap();
     }
 }

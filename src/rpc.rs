@@ -13,6 +13,7 @@ pub mod proto {
     tonic::include_proto!("kvproto");
 }
 
+use proto::rpc_server::Rpc;
 use proto::rpc_client::RpcClient;
 use proto::{
     AppendEntriesRequest, AppendEntriesResponse, Empty, GetKeyRequest, GetKeyResponse, LogEntry,
@@ -230,19 +231,47 @@ impl StoreTransport for RpcTransport {
         }
     }
 
-    async fn delegate(&self, to_id: usize, key: Vec<u8>, val: Vec<u8>) -> Result<PutResponse, crate::StoreError> {
-     let addr = (self.node_addr)(to_id);
-        let mut client = self.connections.connection(addr.clone()).await;
-        let query = tonic::Request::new(Query {
-            sql,
-            consistency: consistency as i32,
-        });
-        let response = client.conn.execute(query).await.unwrap();
-        let response = response.into_inner();
-        let mut rows = vec![];
-        for row in response.rows {
-            rows.push(crate::server::QueryRow { values: row.values });
-        }
-        Ok(crate::server::QueryResults { rows })
+    async fn delegate(
+        &self,
+        to_id: usize,
+        key: Vec<u8>,
+        value: Vec<u8>,
+    ) -> Result<PutResponse, crate::StoreError> {
+        // let addr = (self.node_addr)(to_id);
+        //    let mut client = self.connections.connection(addr.clone()).await;
+        //    let query = tonic::Request::new(PutRequest {
+        //        key,
+        //        value,
+        //    });
+        //    let response = client.conn.execute(query).await.unwrap();
+        //    let response = response.into_inner();
+        //    let mut rows = vec![];
+        //    for row in response.rows {
+        //        rows.push(crate::server::QueryRow { values: row.values });
+        //    }
+        //    Ok(crate::server::QueryResults { rows })
+        Ok(PutResponse {})
+    }
+}
+
+#[derive(Debug)]
+pub struct RpcService {
+    pub server: Arc<StoreServer<RpcTransport>>,
+}
+
+impl RpcService {
+    pub fn new(server: Arc<StoreServer<RpcTransport>>) -> Self {
+        Self { server }
+    }
+}
+
+#[tonic::async_trait]
+impl Rpc for RpcService {
+    async fn put(
+        &self,
+        request: Request<PutRequest>
+    ) -> Result<Response<PutResponse>, tonic::Status> {
+        let put_data = request.into_inner();
+        let server = self.server.clone();
     }
 }
