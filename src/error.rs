@@ -7,5 +7,14 @@ pub enum StoreError {
     NotLeader,
 
     #[error("opening database failed")]
-    FailedDatabaseOpen
+    FailedDatabaseOpen,
+
+    #[error("failed putting key-value pair into database")]
+    FailedPut,
+
+    #[error("internal error when getting value")]
+    FailedGet,
+
+    #[error("value with key not found")]
+    NotFound,
 }

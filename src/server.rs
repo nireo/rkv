@@ -20,7 +20,10 @@ use rocksdb::DB;
 use std::collections::HashMap;
 use tokio::sync::Notify;
 
-use crate::{error::StoreError, rpc::proto::PutResponse};
+use crate::{
+    error::StoreError,
+    rpc::proto::{GetKeyResponse, PutResponse},
+};
 
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(500);
 const MIN_ELECTION_TIMEOUT: Duration = Duration::from_millis(750);
@@ -101,6 +104,25 @@ impl<T: StoreTransport + Send + Sync> Store<T> {
     }
 }
 
+fn put(conn: Arc<Mutex<DB>>, key: Vec<u8>, value: Vec<u8>) -> Result<PutResponse, StoreError> {
+    let conn = conn.lock().unwrap();
+
+    match conn.put(key, value) {
+        Ok(_) => Ok(PutResponse {}),
+        Err(_) => Err(StoreError::FailedPut),
+    }
+}
+
+fn get(conn: Arc<Mutex<DB>>, key: Vec<u8>) -> Result<GetKeyResponse, StoreError> {
+    let conn = conn.lock().unwrap();
+
+    match conn.get(key) {
+        Ok(Some(v)) => Ok(GetKeyResponse { value: v }),
+        Ok(None) => Err(StoreError::NotFound),
+        Err(_) => Err(StoreError::FailedGet),
+    }
+}
+
 impl<T: StoreTransport + Send + Sync> StateMachine<StoreCommand, Bytes> for Store<T> {
     fn register_transition_state(&mut self, transition_id: usize, state: TransitionState) {
         match state {
@@ -117,7 +139,11 @@ impl<T: StoreTransport + Send + Sync> StateMachine<StoreCommand, Bytes> for Stor
         if transition.id == 0 {
             return;
         }
-        // TODO: add apply
+
+        let results = put(self.connection.clone(), transition.key, transition.value);
+        if self.is_leader() {
+            self.results.insert(transition.id as u64, results);
+        }
     }
 
     fn get_pending_transitions(&mut self) -> Vec<StoreCommand> {
