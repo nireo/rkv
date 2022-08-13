@@ -20,7 +20,7 @@ use proto::{
     PutRequest, PutResponse, VoteRequest, VoteResponse,
 };
 
-type NodeAddrFn = dyn Fn(usize) -> String + Send + Sync;
+pub type NodeAddrFn = dyn Fn(usize) -> String + Send + Sync;
 
 #[derive(Debug)]
 struct ConnectionPool {
