@@ -22,7 +22,7 @@ use tokio::sync::Notify;
 
 use crate::{
     error::StoreError,
-    rpc::proto::{GetKeyResponse, PutResponse},
+    rpc::proto::{ PutResponse},
 };
 
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(500);
@@ -33,7 +33,7 @@ const MAX_ELECTION_TIMEOUT: Duration = Duration::from_millis(950);
 pub struct StoreCommand {
     pub id: usize,
     pub key: Vec<u8>,
-    pub value: Vec<u8>,
+    pub value: Option<Vec<u8>>,
 }
 
 impl StateMachineTransition for StoreCommand {
@@ -52,7 +52,7 @@ pub trait StoreTransport {
         &self,
         to_id: usize,
         key: Vec<u8>,
-        value: Vec<u8>,
+        value: Option<Vec<u8>>,
     ) -> Result<PutResponse, StoreError>;
 }
 
@@ -104,22 +104,20 @@ impl<T: StoreTransport + Send + Sync> Store<T> {
     }
 }
 
-fn put(conn: Arc<Mutex<DB>>, key: Vec<u8>, value: Vec<u8>) -> Result<PutResponse, StoreError> {
+fn put(conn: Arc<Mutex<DB>>, key: Vec<u8>, value: Option<Vec<u8>>) -> Result<PutResponse, StoreError> {
     let conn = conn.lock().unwrap();
 
-    match conn.put(key, value) {
-        Ok(_) => Ok(PutResponse {}),
-        Err(_) => Err(StoreError::FailedPut),
-    }
-}
-
-fn get(conn: Arc<Mutex<DB>>, key: Vec<u8>) -> Result<GetKeyResponse, StoreError> {
-    let conn = conn.lock().unwrap();
-
-    match conn.get(key) {
-        Ok(Some(v)) => Ok(GetKeyResponse { value: v }),
-        Ok(None) => Err(StoreError::NotFound),
-        Err(_) => Err(StoreError::FailedGet),
+    if value.is_some() {
+        match conn.put(key, value.unwrap()) {
+            Ok(_) => Ok(PutResponse {value: None} ),
+            Err(_) => Err(StoreError::FailedPut),
+        }
+    } else {
+        match conn.get(key) {
+            Ok(Some(v)) => Ok(PutResponse { value: Some(v) }),
+            Ok(None) => Err(StoreError::NotFound),
+            Err(_) => Err(StoreError::FailedGet),
+        }
     }
 }
 
@@ -153,11 +151,11 @@ impl<T: StoreTransport + Send + Sync> StateMachine<StoreCommand, Bytes> for Stor
     }
 
     fn get_snapshot(&mut self) -> Option<Snapshot<Bytes>> {
-        todo!("Snapshotting is not implemented.");
+        todo!("Snapshotting is not implemented.")
     }
 
     fn create_snapshot(&mut self, _index: usize, _term: usize) -> Snapshot<Bytes> {
-        todo!("Snapshotting is not implemented.");
+        todo!("Snapshotting is not implemented.")
     }
 
     fn set_snapshot(&mut self, _snapshot: Snapshot<Bytes>) {
@@ -220,7 +218,7 @@ impl<T: StoreTransport + Send + Sync> StoreServer<T> {
         let noop = StoreCommand {
             id: 0,
             key: vec![],
-            value: vec![],
+            value: None,
         };
 
         let (message_notifier_tx, message_notifier_rx) = crossbeam::channel::unbounded();
@@ -256,7 +254,7 @@ impl<T: StoreTransport + Send + Sync> StoreServer<T> {
         );
     }
 
-    pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<PutResponse, StoreError> {
+    pub async fn put(&self, key: Vec<u8>, value: Option<Vec<u8>>) -> Result<PutResponse, StoreError> {
         self.wait_for_leader().await;
 
         let (delegate, leader, transport) = {
@@ -315,7 +313,6 @@ impl<T: StoreTransport + Send + Sync> StoreServer<T> {
             {
                 break;
             }
-            // TODO: add a timeout and fail if necessary
             notify.notified().await;
         }
     }

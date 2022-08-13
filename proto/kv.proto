@@ -12,10 +12,11 @@ message GetKeyResponse {
 
 message PutRequest {
   bytes key = 1;
-  bytes value = 2;
+  optional bytes value = 2;
 }
 
 message PutResponse {
+  optional bytes value = 1;
 }
 
 message Empty {
@@ -46,7 +47,7 @@ message AppendEntriesRequest {
 message LogEntry {
   uint64 id = 1;
   bytes key = 2;
-  bytes value = 3;
+  optional bytes value = 3;
   uint64 index = 4;
   uint64 term = 5;
 }
@@ -60,7 +61,6 @@ message AppendEntriesResponse {
 }
 
 service Rpc {
-  rpc Get(GetKeyRequest) returns (GetKeyResponse);
   rpc Put(PutRequest) returns (PutResponse);
   rpc Vote(VoteRequest) returns (Empty);
   rpc RespondToVote(VoteResponse) returns (Empty);

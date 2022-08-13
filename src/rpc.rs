@@ -16,7 +16,7 @@ pub mod proto {
 use proto::rpc_client::RpcClient;
 use proto::rpc_server::Rpc;
 use proto::{
-    AppendEntriesRequest, AppendEntriesResponse, Empty, GetKeyRequest, GetKeyResponse, LogEntry,
+    AppendEntriesRequest, AppendEntriesResponse, Empty, LogEntry,
     PutRequest, PutResponse, VoteRequest, VoteResponse,
 };
 
@@ -235,22 +235,15 @@ impl StoreTransport for RpcTransport {
         &self,
         to_id: usize,
         key: Vec<u8>,
-        value: Vec<u8>,
+        value: Option<Vec<u8>>,
     ) -> Result<PutResponse, crate::StoreError> {
-        // let addr = (self.node_addr)(to_id);
-        //    let mut client = self.connections.connection(addr.clone()).await;
-        //    let query = tonic::Request::new(PutRequest {
-        //        key,
-        //        value,
-        //    });
-        //    let response = client.conn.execute(query).await.unwrap();
-        //    let response = response.into_inner();
-        //    let mut rows = vec![];
-        //    for row in response.rows {
-        //        rows.push(crate::server::QueryRow { values: row.values });
-        //    }
-        //    Ok(crate::server::QueryResults { rows })
-        Ok(PutResponse {})
+        let addr = (self.node_addr)(to_id);
+        let mut client = self.connections.connection(addr.clone()).await;
+        let action = tonic::Request::new(PutRequest { key, value });
+        let response = client.conn.put(action).await.unwrap();
+        let response = response.into_inner();
+
+        Ok(response)
     }
 }
 
@@ -279,14 +272,7 @@ impl Rpc for RpcService {
             Err(e) => return Err(Status::internal(format!("{}", e))),
         };
 
-        Ok(Response::new(PutResponse {}))
-    }
-
-    async fn get(
-        &self,
-        request: Request<GetKeyRequest>,
-    ) -> Result<Response<GetKeyResponse>, tonic::Status> {
-        Ok(Response::new(GetKeyResponse { value: vec![] }))
+        Ok(Response::new(results))
     }
 
     async fn vote(&self, request: Request<VoteRequest>) -> Result<Response<Empty>, tonic::Status> {
